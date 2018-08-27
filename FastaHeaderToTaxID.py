@@ -1,3 +1,13 @@
+#Goes through a protein FASTA file and replaces the header with the NCBI taxonomy ID for
+#the originating organism using NCBI's E utilities.  MUST be given a protein FASTA file
+#as an input, does not work for DNA.  Requires and internet connection.  Written to make
+#FASTA files compatible with the assign taxonomy function of the Interactive Tree of Life.
+
+#This process may be faster through the use of an NCBI API key.  If you don't have one you
+#can get one for free by registering an account with NCBI.  The script will ask for a file
+#containing the API key: this should be a plain text file which ONLY contains the key in a
+#single contiguous string.
+
 import urllib.request
 import xml.etree.ElementTree as ET
 import time
@@ -9,7 +19,7 @@ import datetime
 #Delay between API requests, 0.35s if no API key, 0.11s if API key is present
 requestDelay = 350000
 
-
+#Basic URL for accessing the E Utilities
 urlBase = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=protein&id="
 
 if __name__ == "__main__":
@@ -25,10 +35,12 @@ if __name__ == "__main__":
     while (gettingLocation == True):
         print("\nPlease choose an input file: ")
         inputFileLocation = filedialog.askopenfilename()
+        #Try to open the input FASTA file.  If successful, set as inputData and continue
         try:
             inputFile = open(inputFileLocation,"r")
             inputData = inputFile.read()
             gettingLocation = False
+        #If opening the input file fails inform the user and retry.
         except IOError:
             print("Sorry, I'm unable to open that file location.")
 
@@ -39,19 +51,23 @@ if __name__ == "__main__":
         apiInput = input("\nDo you have an NCBI eTools API key?  This is not\
  required but speeds up the rate at which requests can be made.  If you have one\
  type 'y', otherwise type 'n' to skip.")
+        #If the user indicated no API key, continue
         if (apiInput == "n"):
             gettingKey = False
+        #If the user has an API key ask for the file location
         elif (apiInput == "y"):
             print("\nPlease select a file containing your API key: it should be\
  a plain text document with any name containing ONLY your key.")
             apiKeyLocation = filedialog.askopenfilename()
             try:
+                #Try opening the file.  If successful, adjust the requestDelay and continue
                 if (apiKeyLocation != ""):
                     file = open(apiKeyLocation,"r")
                     apiKey = file.read()
                     print("Using API key = " + apiKey)
                     requestDelay = 110000
                     gettingKey = False
+                #If opening the file fails or no location is given wanr the user and retry
                 else:
                     print("Sorry, I'm unable to open that file.")
             except IOError:
@@ -68,9 +84,11 @@ if __name__ == "__main__":
     while (gettingLocation == True):
         print("\nPlease choose an output file location and file name: ")
         outputFileLocation = filedialog.asksaveasfilename()
+        #Try to open the output file location, if successful set as gettingLocation and continue
         try:
             file = open(outputFileLocation,"w")
             gettingLocation = False
+        #If opening the location fails warn the user and retry
         except IOError:
             print("Sorry, I'm unable to open that file location.")
            
@@ -82,7 +100,6 @@ if __name__ == "__main__":
     #Create a list to read sequences into
     seqsList = []
 
-    
     #Find sequences and append them to the seqsList list:
     #For every ">" char (which denotes the start of a sequence)
     for x in range (0, numberOfSeqs):
@@ -99,42 +116,49 @@ if __name__ == "__main__":
         inputData = inputData[secondSeqStart:]
 
     print("Starting request process")
-    #for seq in seqsList:
-    #    print(seq["header"])
+
+    #Log the last time a web request was made (none for the first one so start the clock now)
     lastRequest = datetime.datetime.now()
     
     for seq in seqsList:
+        #Find the space char in a header, everything before that except ">" is the accession
         endOfAccession = seq["header"].find(" ")
         accession = seq["header"][1:endOfAccession]
 
+        #Append the accession to the URL request
         url = urlBase + accession
 
+        #Log the time the current request is made
         currentTime =  datetime.datetime.now()
+        #Check if more than requestDelay milliseconds have elapsed, if not wait.
+        #This prevents overloading of the NCBI website which may result in you
+        #getting IP blocked.
         timeDelta = currentTime - lastRequest
         if ((timeDelta.microseconds + (timeDelta.seconds * 1000000)) < requestDelay):
             time.sleep(0.05)
             currentTime =  datetime.datetime.now()
             timeDelta = currentTime - lastRequest
 
-
+        #Open the request URL
         with urllib.request.urlopen(url) as response:
+            #Log this as the last time a request was made
             lastRequest = datetime.datetime.now()
             print("Fetched page at " + str(lastRequest))
+            #Process the web request to something comprehensible
             xmlOutput = response.read().decode("utf-8")
             #Use the XML parser to find the root of the XML tree
             root = ET.fromstring(xmlOutput)
+            #Find the value containing the taxonomy ID number
             taxid = root[0][8].text
+            #Set the sequences header in seqsList as the tax ID number
             seq["header"] = ">" + taxid
         time.sleep(1)
 
+    #Once all headers have been processed, dump the processed list to the output file
     with open(outputFileLocation, "a") as file:
         for seq in seqsList:
             file.write(seq["header"] + " " + seq["sequence"])
 
-    print("Done!")
+print("Done!")
 
-    
-
-
- 
 
